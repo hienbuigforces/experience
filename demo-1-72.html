@@ -1,0 +1,206 @@
+<!DOCTYPE html>
+<html lang="en">
+	<head>
+		<meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <script src="https://ajax.googleapis.com/ajax/libs/jquery/1.9.1/jquery.min.js"></script>
+        <style type="text/css">
+            #gf-ui-controls {
+                height: 98vh !important;
+            }
+            input {
+                margin: 0 5px 5px 0;
+            }
+            .btnColor {
+                width: 50px;
+            }
+        </style>
+	</head>
+	<body>		
+		<div style="width:60%; float:left">
+			<!-- widget drop code begin -->
+			<div class="nd-experience-visualiser" data-hash="c5b45523a97a7a844462217eba8b2298056e52ce" data-full-screen="0" data-hide-ui="1"></div>
+			<script type="text/javascript">
+			var ndev = ['https://experience.netdirector.co.uk', '/dist/'];
+			var s = 'script', o = document.createElement(s);
+			o.type = 'text/javascript';
+			o.src = ndev[0] + ndev[1] + 'experience.js';
+			document.getElementsByTagName(s)[0].parentNode.appendChild(o);
+			</script>
+			<!-- widget drop code end -->
+		</div>
+        <div id="controls" style="width:37%; float:left; padding-left: 15px; height: 98vh; overflow-y: auto;">
+            <h4 id="hash"></h4>
+            <div id="colors">
+                <div id='gf-control-paint'></div>
+            </div>
+			<div id="rims" style="clear: both;"></div>
+			<div id="interactions"></div>
+			<div id="cameras"></div>
+			<div id="scenes"></div>
+        </div>
+	</body>
+</html>
+<script>
+    var interval_obj = setInterval(function(){
+        if(window.widget != null) {
+            let error = false;
+            try {
+                window.widget.get_carpaint_materials();
+            } catch(err) {
+                error = true;
+            }
+            if (!error) {
+                build();
+                clearInterval(interval_obj);
+            }
+        }
+    }, 1000);
+
+    function build() {
+        let hash = $('.nd-experience-visualiser').data('hash');
+        $('#hash').html('Hash: ' + hash);
+
+        // colours
+        let colors = ndexp.api.paint.getColorsMaterials();
+        if (colors.length > 0) {
+            $('#colors').prepend('<h4>Colour: <span id="currentColor"></span></h4>');
+            $('#currentColor').html(ndexp.api.paint.getDefaultPaint());
+            colors.forEach(function(color, index) {
+                let style = '';
+                if (color.payload !== '' && color.payload !== null) {
+                    if (JSON.parse(color.payload).swatch) {
+                        style = 'background:'+JSON.parse(color.payload).swatch;
+                    }
+                    // check if its a two tone paint
+                    if (JSON.parse(color.payload).swatches) {
+                        style = 'background-color:'+JSON.parse(color.payload).swatches[1]+';background-image: -webkit-linear-gradient(116deg,'+JSON.parse(color.payload).swatches[1]+' 53%,'+JSON.parse(color.payload).swatches[0]+' 35%);';
+                    }
+                    // skip hidden colours
+                    if (JSON.parse(color.payload).showInUi === false) {
+                        return true;
+                    }
+                } else {
+                    let rgbTop;
+                    // depending on what type of material we are dealing with
+                    // depends on what gradient we mix in css
+                    switch (color.type) {
+                        case 0: // advanced - back_color
+                            rgbTop = Math.round(color.properties[1].value[0] * 255)+","+Math.round(color.properties[1].value[1] * 255)+","+Math.round(color.properties[1].value[2] * 255);
+                            break;
+                        case 2: // metallic - metallic_reflection_color
+                            rgbTop = Math.round(color.properties[6].value[0] * 255)+","+Math.round(color.properties[6].value[1] * 255)+","+Math.round(color.properties[6].value[2] * 255);
+                            break;
+                        case 3: // pearlescent - back_color
+                            rgbTop = Math.round(color.properties[1].value[0] * 255)+","+Math.round(color.properties[1].value[1] * 255)+","+Math.round(color.properties[1].value[2] * 255);
+                            break;
+                        case 1:
+                        default: // main_color
+                            rgbTop = Math.round(color.properties[0].value[0] * 255)+","+Math.round(color.properties[0].value[1] * 255)+","+Math.round(color.properties[0].value[2] * 255);
+                            break;
+                    }
+                    style = 'background: rgb('+rgbTop+');';
+                }
+                $('#colors #gf-control-paint').append("<div style='float: left;' data-name='"+color.name+"'><input type='button' title='"+color.name+"' class='btnColor gf-paint-inner' onclick=changeColor(this) style='"+style+"' /></div>");
+            });
+		}
+
+		// wheels
+        let rims = ndexp.api.rim.getRims();
+        if (rims.length > 0) {
+            $('#rims').append('<h4>Wheels: <span id="currentRim"></h4>');
+            $('#currentRim').html(ndexp.api.rim.getDefaultRim());
+            rims.forEach(function(rim) {
+                $('#rims').append("<input type='button' onclick=changeRim(this) value='"+rim+"' />");
+            });
+        }
+
+        // interactions
+        let interactions = ndexp.api.interactions.getAnimations();
+        $('#interactions').append('<h4>Interact: </h4>');
+        ndexp.api.interactions.checkIsEngineSoundAvailable().done(function () {
+            $('#interactions').append("<input type='button' onclick=playEngineSound() value='Engine Sound' />");
+        });
+		if (ndexp.api.interactions.hasVehicleLights()) {
+            $('#interactions').append("<input type='button' onclick=toggleLights() value='Light' />");
+		}
+        if (interactions.length > 0) {
+            interactions.forEach(function(interaction) {
+                $('#interactions').append("<input type='button' onclick=toggleAnimation(this) value='"+interaction+"' />");
+            });
+        }
+
+		// cameras
+        let cameras = ndexp.api.camera.getExteriorViewPoints();
+        cameras = cameras.concat(ndexp.api.camera.getAnimationViewPoints());
+        cameras = cameras.concat(ndexp.api.camera.getInteriorViewPoints());
+        // remove hidden cameras
+        cameras = cameras.filter((camera) => camera.indexOf('hidden') === -1)
+		if (cameras.length > 0) {
+            $('#cameras').append('<h4>Viewpoint: <span id="currentCamera"></h4>');
+            $('#currentCamera').html(ndexp.api.camera.getDefaultViewPoint());
+            cameras.forEach(function(camera) {
+                $('#cameras').append("<input type='button' onclick=changeCamera(this) value='"+camera+"' />");
+            });
+		}
+
+		// scenes
+        let scenes = ndexp.api.scene.getScenes();
+        // remove hidden scenes
+        scenes = scenes.filter((scene) => scene.indexOf('hidden') === -1)
+        if (scenes.length > 0) {
+            $('#scenes').append('<h4>Scene: <span id="currentScene"></h4>');
+            $('#currentScene').html(ndexp.api.scene.getDefaultScene());
+            scenes.forEach(function(scene) {
+                $('#scenes').append("<input type='button' onclick=changeScene(this) value='"+scene+"' />");
+            });
+        }
+
+        // button interior
+        if (ndexp.api.camera.interiorExists()) {
+            $('#controls').append('<h4>View: </h4>');
+            $('#controls').append("<input type='button' onclick=changeView(this) value='Interior' />");
+        }
+    }
+
+    function changeColor(elm) {
+        ndexp.api.paint.setColorByName(elm.title);
+        $('#currentColor').html(elm.title);
+    }
+
+    function changeRim(elm) {
+        ndexp.api.rim.setRimByName(elm.value)
+        $('#currentRim').html(elm.value);
+    }
+
+    function toggleLights() {
+        ndexp.api.interactions.toggleLights();
+    }
+
+    function playEngineSound() {
+        ndexp.api.interactions.playEngineSound();
+    }
+
+    function toggleAnimation(elm) {
+        ndexp.api.interactions.toggleAnimationByName(elm.value);
+    }
+
+    function changeCamera(elm) {
+        ndexp.api.camera.setViewPointByName(elm.value);
+        $('#currentCamera').html(elm.value);
+    }
+
+    function changeScene(elm) {
+        ndexp.api.scene.setSceneByName(elm.value);
+        $('#currentScene').html(elm.value);
+    }
+
+    function changeView(elm) {
+        if (elm.value == 'Interior') {
+            ndexp.api.camera.setInterior();
+            elm.value = 'Exterior';
+        } else {
+            ndexp.api.camera.setExterior();
+            elm.value = 'Interior';
+        }
+    }
+</script>
